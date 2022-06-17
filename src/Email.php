@@ -122,7 +122,7 @@ class Email extends EdenEmailComponent
 
     public function getTextHtml() : ?string
     {
-        return $this->textHtml;
+        return $this->textHtml ?? $this->textPlain;
     }
 
     public function getTextPlain() : ?string
