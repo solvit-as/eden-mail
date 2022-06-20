@@ -56,28 +56,40 @@ class Email extends EdenEmailComponent
 
     protected function createBodyPartsFromRaw($structure)
     {
-        $this->textPlain = $structure['body']['text/plain'] ?? null;
-        $this->textHtml = $structure['body']['text/html'] ?? null;
+        $this->textPlain = $structure['body']['text/plain'] ?? '';
+        if(!empty($structure['body']['text/html'])){
+            $this->textHtml = $structure['body']['text/html'];
+        }elseif(!empty($structure['body']['text/xml'])){
+            $this->textHtml = $structure['body']['text/xml'];
+        } else {
+            $this->textHtml = '';
+        }
     }
 
     protected function createAttachmentsFromRaw(array $structure)
     {
-        $rawAttachmens = $structure['attachment'] ?? [];
+        if(empty($structure['attachments']) || !is_array($structure['attachments'])){
+            return null;
+        }
 
-        foreach ($rawAttachmens as $filename => $attachment) {
+        foreach ($structure['attachments'] as $i => $attachment) {
             $attachment = array_filter($attachment);
             if (empty($attachment)) {
                 continue;
             }
 
-            $mime = array_key_first($attachment);
+            $mime = $attachment['headers']['mime']
+                ?? $attachment['headers']['content-type']
+                ?? 'application/octet-stream';
             $incomingMailAttachment = new IncomingMailAttachment();
-            $incomingMailAttachment->id = \bin2hex(\random_bytes(20));
-            $incomingMailAttachment->name = $filename;
+            $incomingMailAttachment->id = $attachment['headers']['content-id'] ?? \bin2hex(\random_bytes(20));
+            $incomingMailAttachment->name = $attachment['headers']['name']
+                ?? $attachment['headers']['filename']
+                ?? 'attach_' . $i;
             $incomingMailAttachment->mime = $mime;
-            $incomingMailAttachment->fileExtension = pathinfo($filename, PATHINFO_EXTENSION);
+            $incomingMailAttachment->fileExtension = pathinfo($incomingMailAttachment->name, PATHINFO_EXTENSION);
 
-            $incomingMailAttachment->setFileContent($attachment[$mime]);
+            $incomingMailAttachment->setFileContent($attachment['content']);
 
             $this->attachments[] = $incomingMailAttachment;
         }
@@ -88,7 +100,6 @@ class Email extends EdenEmailComponent
         $this->headers = new EmailHeaders(
             array_diff_key($structure, array_flip([
                 'body',
-                'attachment',
                 'attachments',
             ]))
         );
