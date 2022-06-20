@@ -82,6 +82,11 @@ class Pop3 extends Base
      */
     private $debugging = false;
 
+    protected const DEFAULT_BODY_PARTS_STRUCTURE = [
+        'body' => [],
+        'attachments' => []
+    ];
+
     /**
      * Constructor - Store connection information
      *
@@ -238,7 +243,7 @@ class Pop3 extends Base
 
         try {
             $this->send('QUIT');
-        } catch (Argument $e) {
+        } catch (\Exception $e) {
             // ignore error - we're closing the socket anyway
         }
 
@@ -450,6 +455,7 @@ class Pop3 extends Base
         if (isset($parts[1]) && trim($parts[1]) != ')') {
             $body = $parts[1];
         }
+        unset($parts);
 
         $boundary = null;
         // extract boundary
@@ -457,24 +463,20 @@ class Pop3 extends Base
             $boundary = $_[1];
         }
 
-        $lines = explode("\n", $head);
-        $head = array();
-        foreach ($lines as $line) {
-            if (trim($line) && preg_match("/^\s+/", $line)) {
-                $head[count($head) - 1] .= ' ' . trim($line);
+        foreach (explode("\n", $head) as $line) {
+            if (preg_match("/^\s/", $line)) {
+                $headers[count($headers) - 1] .= "\n" . $line;
                 continue;
             }
 
-            $head[] = trim($line);
+            $headers[] = trim($line);
         }
 
-        $head = implode("\n", $head);
-
-        $recipientsTo = $recipientsCc = $recipientsBcc = $sender = array();
+        $recipientsTo = $recipientsCc = $recipientsBcc = $sender = [];
 
         //get the headers
-        $headers1 = imap_rfc822_parse_headers($head);
-        $headers2 = $this->getHeaders($head);
+        $headers1 = imap_rfc822_parse_headers(implode("\n", $headers));
+        $headers2 = $this->getHeaders($headers);
 
         //set the from
         $sender['name'] = null;
@@ -598,7 +600,9 @@ class Pop3 extends Base
         //get the body parts
         $structure = array_merge(
             $structure,
-            $this->getBodyParts($body, $boundary)
+            $boundary
+                ? $this->getBodyPartsByBoundary($body, $boundary)
+                : $this->getBodyAsSinglePart($body, $headers2)
         );
 
         return $structure;
@@ -650,18 +654,16 @@ class Pop3 extends Base
         return $headers;
     }
 
-    protected function getBodyParts($content, $boundary) {
+    protected function getBodyPartsByBoundary($content, $boundary) {
         $boundaryStart = '--'.$boundary;
         $boundaryEnd = $boundaryStart.'--';
-        $result = [
-            'body' => [],
-            'attachments' => []
-        ];
+        $result = self::DEFAULT_BODY_PARTS_STRUCTURE;
 
         if(!preg_match_all("/".preg_quote($boundaryStart)."(.*)".preg_quote($boundaryEnd)."/is",
             $content, $_)
         ){
-            return $result['body']['text/plain'] = $content;
+            $result['body']['text/plain'] = $content;
+            return  $result;
         }
 
         $content = $_[1][0];
@@ -674,98 +676,28 @@ class Pop3 extends Base
         }
 
         foreach ($parts as $part) {
-            [$headers, $content] = preg_split("/(\r)?\n(\r)?\n/", $part);
-            $headers = $this->getHeaders($headers);
-
-            //if content type is not set
-            if (!isset($headers['content-type'])) {
-                $result['body']['text/plain'] = $content;
-                continue;
-            }
-
-            //split the content type
-            if (strpos($headers['content-type'], ';') !== false) {
-                $contentTypeParts = explode(';', $headers['content-type']);
-            }else{
-                $contentTypeParts = [$headers['content-type']];
-            }
-            $fullContentType = strtolower(trim($contentTypeParts[0]));
-            array_shift($contentTypeParts);
-
-            if (strpos($fullContentType, '/') !== false) {
-                [$primaryType, $secondaryType] = explode('/', $fullContentType, 2);
-            }else{
-                $primaryType = $fullContentType;
-            }
-
-            //see if there are any extra stuff
-            if (!empty($contentTypeParts)) {
-                //transform the extra array to a key value pair
-                foreach ($contentTypeParts as $i => $rawAttr) {
-                    if(preg_match_all("/([\w\-_]+)=(?:\'|\")?([^\'\"]+)(?:\'|\")?$/is", $rawAttr, $_)){
-                        $contentTypeParts[strtolower(trim($_[1][0]))] = $_[2][0];
-                    }else{
-                        $contentTypeParts[$rawAttr];
-                    }
-                    unset($contentTypeParts[$i]);
-                }
-            }
-
-            $headers['mime'] = $fullContentType;
-
-            //if name is set, it's an attachment
-            //if encoding is set
-            if (isset($headers['content-transfer-encoding'])) {
-                if (is_array($headers['content-transfer-encoding']) === true) {
-                    $transferEncoding = $headers['content-transfer-encoding'][1];
-                } else {
-                    $transferEncoding = $headers['content-transfer-encoding'];
-                }
-                //the goal here is to make everytihg utf-8 standard
-                switch (strtolower($transferEncoding)) {
-                    case 'binary':
-                        $content = imap_binary($content);
-                        break;
-                    case 'base64':
-                        $content = base64_decode($content);
-                        break;
-                    case 'quoted-printable':
-                        $content = quoted_printable_decode($content);
-                        break;
-                    case '7bit':
-                        $content = mb_convert_encoding($content, 'UTF-8', 'ISO-2022-JP');
-                        break;
-                    default:
-                        $content = str_replace(array("\n", ' '), '', $content);
-                        break;
-                }
-            }
-
-            if (isset($contentTypeParts['charset']) && strtoupper($contentTypeParts['charset']) != 'UTF-8') {
-                $content = mb_convert_encoding($content, 'UTF-8', strtoupper($contentTypeParts['charset']));
-            }
-            // is it attachment?
-            if (isset($contentTypeParts['name']) || $primaryType == 'application') {
-                if (preg_match('/^\=\?[^?]+\?/', $contentTypeParts['name'])) {
-                    $contentTypeParts['name'] = mb_decode_mimeheader($contentTypeParts['name']);
-                }
-                $result['attachments'][] =
-                [
-                    'headers' => array_merge($headers, $contentTypeParts),
-                    'content' => $content,
-                ];
-            } else {
-                $result['body'][$fullContentType] = $content;
-            }
+            [$rawHeadersStr, $content] = preg_split("/(\r)?\n(\r)?\n/", $part);
+            $headers = $this->getHeaders($rawHeadersStr);
+            self::addPartToStruct($result, $content, $headers);
         }
 
         return $result;
     }
+
+    protected function getBodyAsSinglePart($content, array $headers)
+    {
+        $result = self::DEFAULT_BODY_PARTS_STRUCTURE;
+
+        self::addPartToStruct($result, $content, $headers);
+
+        return $result;
+    }
+
     /**
      * @param int $length
      * @return array
      */
-    public function getLastMailIds($length = 30) :array
+    public function getLastMailIds($length = 300) :array
     {
         $total = $this->getEmailTotal();
         $start = $total > $length ? $total - $length : 1;
@@ -778,19 +710,95 @@ class Pop3 extends Base
      */
     public function getMail(int $id) : Email
     {
-        //$structure = $this->getEmailFormat($this->call('RETR ' . $id, true));
-        $emailRaw = file_get_contents('/var/www/html/console/runtime/email_test.eml');
-        $structure = $this->getEmailFormat($emailRaw);
+        $rawEmail = $this->call('RETR ' . $id, true);
+        //$rawEmail = file_get_contents('/var/www/html/console/runtime/email_test.eml');
+        $structure = $this->getEmailFormat($rawEmail);
         if(!$structure){
             return false;
         }
         $email = new Email($structure);
         $email->setId($id);
+        $email->raw = $rawEmail;
         return $email;
     }
 
     public function markMailsAsRead(array $mailIds)
     {
         // POP3 is not supports this feature
+    }
+
+    public function decodeContent($content, $transferEncoding)
+    {
+        switch (strtolower($transferEncoding)) {
+            case 'binary': return imap_binary($content);
+            case 'base64': return base64_decode($content);
+            case 'quoted-printable': return quoted_printable_decode($content);
+            case '7bit': return mb_convert_encoding($content, 'UTF-8', 'ISO-2022-JP');
+            default: return $content;
+        }
+    }
+
+    protected static function addPartToStruct(array &$struct, $content, $headers) : void
+    {
+        //if encoding is set
+        if (isset($headers['content-transfer-encoding'])) {
+            if (is_array($headers['content-transfer-encoding']) === true) {
+                $transferEncoding = $headers['content-transfer-encoding'][1];
+            } else {
+                $transferEncoding = $headers['content-transfer-encoding'];
+            }
+            $content = self::decodeContent($content, $transferEncoding);
+        }
+
+        if (!isset($headers['content-type'])) {
+            $struct['body']['text/plain'] = $content;
+            return;
+        }
+        //split the content type
+        if (strpos($headers['content-type'], ';') !== false) {
+            $contentTypeParts = explode(';', $headers['content-type']);
+        }else{
+            $contentTypeParts = [$headers['content-type']];
+        }
+        $fullContentType = strtolower(trim($contentTypeParts[0]));
+        array_shift($contentTypeParts);
+
+        if (strpos($fullContentType, '/') !== false) {
+            [$primaryType, $secondaryType] = explode('/', $fullContentType, 2);
+        }else{
+            $primaryType = $fullContentType;
+        }
+
+        //see if there are any extra stuff
+        if (!empty($contentTypeParts)) {
+            //transform the extra array to a key value pair
+            foreach ($contentTypeParts as $i => $rawAttr) {
+                if(preg_match_all("/([\w\-_]+)=(?:\'|\")?([^\'\"]+)(?:\'|\")?$/is", $rawAttr, $_)){
+                    $contentTypeParts[strtolower(trim($_[1][0]))] = $_[2][0];
+                }else{
+                    $contentTypeParts[$rawAttr];
+                }
+                unset($contentTypeParts[$i]);
+            }
+        }
+
+        $headers['mime'] = $fullContentType;
+
+        if (isset($contentTypeParts['charset']) && strtoupper($contentTypeParts['charset']) != 'UTF-8') {
+            $content = mb_convert_encoding($content, 'UTF-8', strtoupper($contentTypeParts['charset']));
+        }
+        // is it attachment?
+        if (isset($contentTypeParts['name']) || $primaryType == 'application') {
+            if (preg_match('/^\=\?[^?]+\?/', $contentTypeParts['name'])) {
+                $contentTypeParts['name'] = mb_decode_mimeheader($contentTypeParts['name']);
+            }
+            $struct['attachments'][] =
+                [
+                    'headers' => array_merge($headers, $contentTypeParts),
+                    'content' => $content,
+                ];
+        } else {
+            $struct['body'][$fullContentType] = $content;
+        }
     }
 }

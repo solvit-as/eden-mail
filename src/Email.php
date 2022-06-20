@@ -40,6 +40,8 @@ class Email extends EdenEmailComponent
     /** @var string|null */
     private $textApplication;
 
+    public $raw = null;
+
     public function __construct(array $structure = null)
     {
         if($structure){
