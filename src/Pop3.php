@@ -448,7 +448,7 @@ class Pop3 extends Base
         }
 
         //split the head and the body
-        $parts = preg_split("/\n\s*\n/", $rawEmail, 2);
+        $parts = preg_split("#\n\s*\n#", $rawEmail, 2);
 
         $head = $parts[0];
         $body = null;
@@ -459,12 +459,12 @@ class Pop3 extends Base
 
         $boundary = null;
         // extract boundary
-        if (preg_match("/boundary\=\"([^\"]+)/im", $head, $_)) {
+        if (preg_match("#boundary\=\"([^\"]+)#im", $head, $_)) {
             $boundary = $_[1];
         }
 
         foreach (explode("\n", $head) as $line) {
-            if (preg_match("/^\s/", $line)) {
+            if (preg_match("#^\s#", $line)) {
                 $headers[count($headers) - 1] .= "\n" . $line;
                 continue;
             }
@@ -483,7 +483,7 @@ class Pop3 extends Base
         if (isset($headers1->from[0]->personal)) {
             $sender['name'] = $headers1->from[0]->personal;
             //if the name is iso or utf encoded
-            if (preg_match("/^\=\?[a-zA-Z]+\-[0-9]+.*\?/", strtolower($sender['name']))) {
+            if (preg_match("#^\=\?[a-zA-Z]+\-[0-9]+.*\?#", strtolower($sender['name']))) {
                 //decode the subject
                 $sender['name'] = str_replace('_', ' ', mb_decode_mimeheader($sender['name']));
             }
@@ -502,7 +502,7 @@ class Pop3 extends Base
                 if (isset($to->personal)) {
                     $recipient['name'] = $to->personal;
                     //if the name is iso or utf encoded
-                    if (preg_match("/^\=\?[a-zA-Z]+\-[0-9]+.*\?/", strtolower($recipient['name']))) {
+                    if (preg_match("#^\=\?[a-zA-Z]+\-[0-9]+.*\?#", strtolower($recipient['name']))) {
                         //decode the subject
                         $recipient['name'] = str_replace('_', ' ', mb_decode_mimeheader($recipient['name']));
                     }
@@ -522,7 +522,7 @@ class Pop3 extends Base
                     $recipient['name'] = $cc->personal;
 
                     //if the name is iso or utf encoded
-                    if (preg_match("/^\=\?[a-zA-Z]+\-[0-9]+.*\?/", strtolower($recipient['name']))) {
+                    if (preg_match("#^\=\?[a-zA-Z]+\-[0-9]+.*\?#", strtolower($recipient['name']))) {
                         //decode the subject
                         $recipient['name'] = str_replace('_', ' ', mb_decode_mimeheader($recipient['name']));
                     }
@@ -541,7 +541,7 @@ class Pop3 extends Base
                 if (isset($bcc->personal)) {
                     $recipient['name'] = $bcc->personal;
                     //if the name is iso or utf encoded
-                    if (preg_match("/^\=\?[a-zA-Z]+\-[0-9]+.*\?/", strtolower($recipient['name']))) {
+                    if (preg_match("#^\=\?[a-zA-Z]+\-[0-9]+.*\?#", strtolower($recipient['name']))) {
                         //decode the subject
                         $recipient['name'] = str_replace('_', ' ', mb_decode_mimeheader($recipient['name']));
                     }
@@ -563,7 +563,7 @@ class Pop3 extends Base
         $headers1->subject = str_replace(array('<', '>'), '', trim($headers1->subject));
 
         //if the subject is iso or utf encoded
-        if (preg_match("/^\=\?[^?]+\?/", strtolower($headers1->subject))) {
+        if (preg_match("#^\=\?[^?]+\?#", strtolower($headers1->subject))) {
             //decode the subject
             $headers1->subject = str_replace('_', ' ', mb_decode_mimeheader($headers1->subject));
         }
@@ -626,7 +626,7 @@ class Pop3 extends Base
         $headers = array();
         foreach ($rawData as $line) {
             $line = trim($line);
-            if (preg_match("/^([a-zA-Z0-9-]+):/i", $line, $matches)) {
+            if (preg_match("#^([a-zA-Z0-9-]+):#i", $line, $matches)) {
                 $key = strtolower($matches[1]);
                 if (isset($headers[$key])) {
                     if (!is_array($headers[$key])) {
@@ -659,7 +659,7 @@ class Pop3 extends Base
         $boundaryEnd = $boundaryStart.'--';
         $result = self::DEFAULT_BODY_PARTS_STRUCTURE;
 
-        if(!preg_match_all("/".preg_quote($boundaryStart)."(.*)".preg_quote($boundaryEnd)."/is",
+        if(!preg_match_all("#".preg_quote($boundaryStart)."(.*)".preg_quote($boundaryEnd)."#is",
             $content, $_)
         ){
             $result['body']['text/plain'] = $content;
@@ -676,7 +676,7 @@ class Pop3 extends Base
         }
 
         foreach ($parts as $part) {
-            [$rawHeadersStr, $content] = preg_split("/(\r)?\n(\r)?\n/", $part);
+            [$rawHeadersStr, $content] = preg_split("#(\r)?\n(\r)?\n#", $part);
             $headers = $this->getHeaders($rawHeadersStr);
             self::addPartToStruct($result, $content, $headers);
         }
@@ -773,7 +773,7 @@ class Pop3 extends Base
         if (!empty($contentTypeParts)) {
             //transform the extra array to a key value pair
             foreach ($contentTypeParts as $i => $rawAttr) {
-                if(preg_match_all("/([\w\-_]+)=(?:\'|\")?([^\'\"]+)(?:\'|\")?$/is", $rawAttr, $_)){
+                if(preg_match_all("#([\w\-_]+)=(?:\'|\")?([^\'\"]+)(?:\'|\")?$#is", $rawAttr, $_)){
                     $contentTypeParts[strtolower(trim($_[1][0]))] = $_[2][0];
                 }else{
                     $contentTypeParts[$rawAttr];
