@@ -727,7 +727,7 @@ class Pop3 extends Base
         // POP3 is not supports this feature
     }
 
-    public function decodeContent($content, $transferEncoding)
+    public static function decodeContent($content, $transferEncoding)
     {
         switch (strtolower($transferEncoding)) {
             case 'binary': return imap_binary($content);
