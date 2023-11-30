@@ -23,7 +23,7 @@ class Index extends Base
      * @const int INSTANCE Flag that designates singleton when using ::i()
      */
     const INSTANCE = 1;
-    
+
     /**
      * Returns Mail IMAP
      *
@@ -45,10 +45,10 @@ class Index extends Base
             ->test(4, 'int', 'null')
             ->test(5, 'bool')
             ->test(6, 'bool');
-            
+
         return Imap::i($host, $user, $pass, $port, $ssl, $tls);
     }
-    
+
     /**
      * Returns Mail POP3
      *
@@ -61,7 +61,7 @@ class Index extends Base
      *
      * @return Eden\Mail\Pop3
      */
-    public function pop3($host, $user, $pass, $port = null, $ssl = false, $tls = false)
+    public function pop3($host, $user, $pass, $port = null, $ssl = false, $tls = false, $debugging = false)
     {
         Argument::i()
             ->test(1, 'string')
@@ -70,10 +70,10 @@ class Index extends Base
             ->test(4, 'int', 'null')
             ->test(5, 'bool')
             ->test(6, 'bool');
-        
-        return Pop3::i($host, $user, $pass, $port, $ssl, $tls);
+
+        return Pop3::i($host, $user, $pass, $port, $ssl, $tls, $debugging);
     }
-    
+
     /**
      * Returns Mail SMTP
      *
@@ -95,7 +95,7 @@ class Index extends Base
             ->test(4, 'int', 'null')
             ->test(5, 'bool')
             ->test(6, 'bool');
-            
+
         return Smtp::i($host, $user, $pass, $port, $ssl, $tls);
     }
 }

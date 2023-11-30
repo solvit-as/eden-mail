@@ -9,6 +9,10 @@
 
 namespace Eden\Mail;
 
+use common\components\LoggableTrait;
+use common\contracts\LoggerInterface;
+use common\helper\SimpleConsoleLog;
+use common\helper\SimpleFileLog;
 use Eden\Mail\Email;
 
 /**
@@ -22,6 +26,8 @@ use Eden\Mail\Email;
  */
 class Pop3 extends Base
 {
+    use LoggableTrait;
+
     /**
      * @const int TIMEOUT Connection timeout
      */
@@ -81,6 +87,7 @@ class Pop3 extends Base
      * @var bool $debugging If true outputs the logs
      */
     private $debugging = false;
+    private $debug_log_filename = 'eden-mail-pop3-debug.log';
 
     protected const DEFAULT_BODY_PARTS_STRUCTURE = [
         'body' => [],
@@ -103,9 +110,20 @@ class Pop3 extends Base
         $pass,
         $port = null,
         $ssl = false,
-        $tls = false
+        $tls = false,
+        $debugging = null
     )
     {
+        if($debugging instanceof LoggerInterface){
+            $this->setLog($debugging);
+        }else{
+            $this->debugging = (bool)$debugging;
+            $this->setLog(SimpleFileLog::createCommon($this->debug_log_filename));
+            if(!$this->debugging){
+                $this->log->filepath = false;
+            }
+        }
+
         Argument::i()
             ->test(1, 'string')
             ->test(2, 'string')
@@ -139,7 +157,12 @@ class Pop3 extends Base
     {
         Argument::i()->test(1, 'bool');
 
+        $log = $this->getLog();
+
+        $log->info('Init connection');
+
         if ($this->loggedin) {
+            $log->info('Alredy logged in');
             return $this;
         }
 
@@ -148,7 +171,7 @@ class Pop3 extends Base
         if ($this->ssl) {
             $host = 'ssl://' . $host;
         }
-
+        $log->info('host: ' . $host);
         $errno = 0;
         $errstr = '';
 
@@ -160,6 +183,8 @@ class Pop3 extends Base
             ]
         ]);
 
+        $log->info('port: ' . $this->port);
+
         $this->socket = stream_socket_client($host . ':' . $this->port,
             $errno,
             $errstr,
@@ -169,14 +194,19 @@ class Pop3 extends Base
         );
 
         if (!$this->socket) {
+            $log->info('socket is failed: ' . $errstr . ' ' . $errno);
             //throw exception
             Exception::i()
                 ->setMessage(Exception::SERVER_ERROR)
                 ->addVariable($host . ':' . $this->port)
                 ->trigger();
+        }else{
+            $log->info('socket is ok: ' . gettype($this->socket));
+            $log->dump($this->socket);
         }
 
         $welcome = $this->receive();
+        $log->info('welcome: ' . $welcome);
 
         strtok($welcome, '<');
         $this->timestamp = strtok('>');
@@ -186,19 +216,26 @@ class Pop3 extends Base
             $this->timestamp = '<' . $this->timestamp . '>';
         }
 
+        $log->info('timestamp: ' . $this->timestamp);
+
         if ($this->tls) {
+            $log->info('send tls enable request');
             $this->call('STLS');
             if (!stream_socket_enable_crypto(
                 $this->socket,
                 true,
                 STREAM_CRYPTO_METHOD_TLS_CLIENT
             )) {
+                $log->info('stream_socket_enable_crypto failed');
+                $log->info('Do disconnect');
                 $this->disconnect();
                 //throw exception
                 Exception::i()
                     ->setMessage(Exception::TLS_ERROR)
                     ->addVariable($host . ':' . $this->port)
                     ->trigger();
+            } else {
+                $this->log->info('stream_socket_enable_crypto ok');
             }
         }
 
@@ -389,7 +426,7 @@ class Pop3 extends Base
                 if ($line[0] == '.') {
                     $line = substr($line, 1);
                 }
-                $this->debug('Receiving: ' . $line);
+                $this->getLog()->info('Receiving: ' . $line);
                 $message .= $line;
                 $line = fgets($this->socket);
             };
@@ -407,27 +444,9 @@ class Pop3 extends Base
      */
     protected function send($command)
     {
-        $this->debug('Sending: ' . $command);
+        $this->getLog()->info('Sending: ' . $command);
 
         return fputs($this->socket, $command . "\r\n");
-    }
-
-    /**
-     * Debugging
-     *
-     * @param *string $string The string to output
-     *
-     * @return Eden\Mail\Imap
-     */
-    private function debug($string)
-    {
-        if ($this->debugging) {
-            $string = htmlspecialchars($string);
-
-
-            echo '<pre>' . $string . '</pre>' . "\n";
-        }
-        return $this;
     }
 
     /**
